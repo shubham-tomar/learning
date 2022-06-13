@@ -18,8 +18,7 @@ import System.IO
 -- Char 's'
 -- Tuple -> list of values of same or different data types 
 -- modEx = mod 4 5 (suffix), modEx2 = 4 `mod` 5 (infix)
--- function Definations
--- name arg1 arg2 ... argn = <expr>
+
 
 
 getString [] = "Empty"
