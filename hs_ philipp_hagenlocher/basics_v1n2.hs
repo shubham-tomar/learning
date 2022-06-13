@@ -26,3 +26,11 @@ in_range2 min max x =
         upper_bound = x <= max
     in
         lower_bound && upper_bound
+
+-- functions (where)
+in_range3 min max x = lb && ub 
+    where
+        lb = x >= min
+        ub = x <= max
+
+
