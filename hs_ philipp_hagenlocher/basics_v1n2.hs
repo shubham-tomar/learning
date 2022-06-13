@@ -29,8 +29,16 @@ in_range2 min max x =
 
 -- functions (where)
 in_range3 min max x = lb && ub 
+-- above lb && ub can also be written as
+-- in_range3 min max x =
+    -- if lb then ub else False
     where
         lb = x >= min
         ub = x <= max
+
+--  Functions (infix)
+-- add a b = a + b
+-- add 10 20
+-- 10 `add` 20 (infix)
 
 
