@@ -21,3 +21,8 @@ in_range min max x =
 -- Type functions --> in_range :: Integer -> Integer -> Integer -> Bool
 
 -- Functions (let)
+in_range2 min max x =
+    let lower_bound = x >= min
+        upper_bound = x <= max
+    in
+        lower_bound && upper_bound
