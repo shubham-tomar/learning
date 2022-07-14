@@ -36,9 +36,9 @@ fac3 n = aux n 1
 
 get_a_list :: Int -> Int -> [Int]
 get_a_list a b
-    | b < a = []
+    | b < a  = []
     | b == a = [b]
-    | b > a = a : get_a_list (a+1) b
+    | b > a  = a : get_a_list (a+1) b
 
 -- list comprehension
 --  eg. *Main> [2 * x | x <- [1,2,3]]  op-> [2,4,6]
@@ -77,14 +77,32 @@ elem_ex a (x:xs)
 rem_dup [] = []
 rem_dup (x:xs)
     | elem_ex x xs = rem_dup xs
-    | otherwise = x : rem_dup xs
+    | otherwise    = x : rem_dup xs
 
 
 --  given list is asc in order
-chk_asc [] = True
+chk_asc []  = True
 chk_asc [x] = True
 chk_asc (x:y:xs)                 -- It can also be written as 
-    | x <= y = chk_asc (y:xs)    -- chk_asc (x:y:xs) = (x <= y) && chk_asc (y:xs)
+    | x <= y    = chk_asc (y:xs)    -- chk_asc (x:y:xs) = (x <= y) && chk_asc (y:xs)
     | otherwise = False
 
+
+-- given a list of tuples representing edges [(1,2) 1->2 ] check if the path exists for given nodes
+-- has_path [(1,2), (2,4), (1,3), (3,6), (3,1), (4,5)] 1 5
+
+has_path :: [(Int, Int)] -> Int -> Int -> Bool
+has_path [] x y = (x == y)
+has_path ((u,v):paths) x y
+    | x == y                                         = True
+    | u == x && v == y                               = True
+    | (has_path paths x u) && (has_path paths v y)   = True
+    | otherwise                                      = has_path paths x y
+
+has_path2 [] x y = x == y
+has_path2 xs x y
+    | x == y    = True
+    | otherwise =
+        let xs2 = [ (n,m) | (n,m) <- xs, n /= x ] in
+            or [ has_path2 xs2 m y | (n,m) <- xs, n == x ]
 
