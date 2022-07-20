@@ -39,4 +39,6 @@ add3 x = (\y -> x + y)
 add4 = (\x -> (\y -> x + y))
 
 
+-- dlist [] = []
+-- dlist (x:xs) = x*2: dlist xs
 dlist = map (\x -> x*2)
