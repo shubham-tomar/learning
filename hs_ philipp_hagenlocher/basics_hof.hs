@@ -26,3 +26,17 @@ app f x = f x
 
 -- filter (\(x, y) -> x /= y) [(1,2), (1,3), (2,2), (2,1)] => [(1,2),(1,3),(2,1)]
 
+
+
+-- partial function and currying
+-- currying is any func having multiple args and can we converted to funcs. with one arg and returns a func till we reach end result
+
+-- eg. f :: a -> b -> c -> d this can be implemented as f :: a -> (b -> (c -> d))
+
+-- add1 :: Int -> Int -> Int
+add2 x y = x+y
+add3 x = (\y -> x + y)
+add4 = (\x -> (\y -> x + y))
+
+
+dlist = map (\x -> x*2)
