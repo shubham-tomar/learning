@@ -1,2 +1,2 @@
-# learning_haskell
-learning haskell
+# learning_handbook_repo
+learning
