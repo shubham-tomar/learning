@@ -1,0 +1,167 @@
+apiVersion: "clickhouse.altinity.com/v1"
+kind: "ClickHouseInstallation"
+metadata:
+  name: "godel-ckh-v2"
+  namespace: "clickhouse-v2"
+  
+spec:
+# Template Spec for the Clusters, Can be reused for all the clusters or can be specific
+  templates:
+    podTemplates:
+      - name: godel-ckh-v2
+        spec:
+          affinity:
+            nodeAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                nodeSelectorTerms:
+                - matchExpressions:
+                  - key: node-type
+                    operator: In
+                    values:
+                    - xyz
+          tolerations:
+            - effect: NoSchedule
+              key: "node-type"
+              operator: "Equal"
+              value: "clickhouse-v2"
+          nodeSelector:
+            node-type: clickhouse-v2
+          containers:
+            - name: clickhouse
+              image: clickhouse/clickhouse-server:22.3.2.2
+              ports:
+                - name: http
+                  containerPort: 8123
+                - name: client
+                  containerPort: 9000
+                - name: interserver
+                  containerPort: 9009
+              resources:
+                requests:
+                  memory: 27Gi
+                  cpu: 11
+                limits:
+                  memory: 27Gi
+                  cpu: 11
+              volumeMounts:
+                - name: data-storage-vol
+                  mountPath: /var/lib/clickhouse
+                - name: log-storage-vol
+                  mountPath: /var/log/clickhouse-server
+              distribution: "Unspecified"
+    serviceTemplates:
+      - name: xyz-service
+        spec:
+          ports:
+            - name: http
+              port: 8123
+            - name: client
+              port: 9000
+          type: ClusterIP
+          clusterIP: None
+    volumeClaimTemplates:
+      - name: data-storage-vol
+        spec:
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 1000Gi
+          storageClassName: ssd-storage
+      - name: log-storage-vol
+        spec:
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 2Gi
+          storageClassName: ssd-storage
+  configuration:
+    profiles:
+      default/max_bytes_before_external_group_by: "10000000000"
+      default/max_bytes_before_external_sort: "15000000000"
+      default/max_memory_usage: "20000000000"
+    clusters:
+      - name: "godel-ckh-v2"
+        templates:
+          podTemplate: godel-ckh-v2
+          serviceTemplate: godel-ckh-v2-service
+        layout:
+          shardsCount: 3
+          replicasCount: 2
+    zookeeper:
+      nodes:
+        - host: zookeeper-0.zookeepers.xyz.svc.cluster.local
+          port: 2181
+        - host: zookeeper-1.zookeepers.xyz.svc.cluster.local
+          port: 2181
+        - host: zookeeper-2.zookeepers.xyz.svc.cluster.local
+          port: 2181
+      session_timeout_ms: 30000
+      operation_timeout_ms: 10000
+    profile:
+      default/max_memory_usage: "20000000000"
+      default/max_bytes_before_external_group_by: "10000000000"
+      default/max_bytes_before_external_sort: "15000000000"
+    files:
+      users.d/ckh-users.xml:
+        <yandex>
+          <users>
+             <user_name>
+               <password_sha256_hex>......</password_sha256_hex>
+               <access_management>0</access_management>
+               <ip>::/0</ip>
+               <profile>default</profile>
+               <allow_ddl>1</allow_ddl>
+               <quota>default</quota>
+             </user_name>
+             <user_admin>
+               <password_sha256_hex>..........</password_sha256_hex>
+               <access_management>1</access_management>
+               <ip>::/0</ip>
+               <profile>default</profile>
+               <quota>default</quota>
+               <allow_ddl>1</allow_ddl>
+             </user_admin>
+          </users>
+        </yandex> 
+      config.d/custom_settings_prefixes.xml:
+        <yandex>
+          <custom_settings_prefixes>sdk_</custom_settings_prefixes>
+        </yandex>
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    clickhouse.altinity.com/Service: cluster
+    clickhouse.altinity.com/app: chop
+    clickhouse.altinity.com/chi: 
+    clickhouse.altinity.com/cluster: 
+    clickhouse.altinity.com/namespace: clickhouse-v2
+  name: 
+  namespace: clickhouse-v2
+spec:
+  ipFamilies:
+  - IPv4
+  ipFamilyPolicy: SingleStack
+  ports:
+  - name: http
+    port: 8123
+    protocol: TCP
+    targetPort: 8123
+  - name: client
+    port: 9000
+    protocol: TCP
+    targetPort: 9000
+  selector:
+    clickhouse.altinity.com/app: chop
+    clickhouse.altinity.com/chi: 
+    clickhouse.altinity.com/cluster: 
+    clickhouse.altinity.com/namespace: clickhouse-v2
+  sessionAffinity: None
+  type: ClusterIP
+status:
+  loadBalancer: {}
