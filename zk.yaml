@@ -1,0 +1,227 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: zookeeper
+  namespace: clickhouse-v2
+spec:
+  podManagementPolicy: Parallel
+  replicas: 3
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: zookeeper
+  serviceName: zookeepers
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        app: zookeeper
+        what: node
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: app
+                operator: In
+                values:
+                - zookeeper
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - command:
+        - bash
+        - -x
+        - -c
+        - |
+          SERVERS=3 &&
+          HOST=`hostname -s` &&
+          DOMAIN=`hostname -d` &&
+          CLIENT_PORT=2181 &&
+          SERVER_PORT=2888 &&
+          ELECTION_PORT=3888 &&
+          ZOO_DATA_DIR=/var/lib/zookeeper/data &&
+          ZOO_DATA_LOG_DIR=/var/lib/zookeeper/datalog &&
+          {
+            echo "clientPort=${CLIENT_PORT}"
+            echo 'tickTime=2000'
+            echo 'initLimit=30000'
+            echo 'syncLimit=10'
+            echo 'maxClientCnxns=2000'
+            echo 'maxSessionTimeout=60000000'
+            echo "dataDir=${ZOO_DATA_DIR}"
+            echo "dataLogDir=${ZOO_DATA_LOG_DIR}"
+            echo 'autopurge.snapRetainCount=10'
+            echo 'autopurge.purgeInterval=1'
+            echo 'preAllocSize=131072'
+            echo 'snapCount=3000000'
+            echo 'leaderServes=yes'
+            echo 'standaloneEnabled=true'
+            echo '4lw.commands.whitelist=stat, ruok, conf, isro'
+          } > /conf/zoo.cfg &&
+          {
+            echo "zookeeper.root.logger=CONSOLE"
+            echo "zookeeper.console.threshold=INFO"
+            echo "log4j.rootLogger=\${zookeeper.root.logger}"
+            echo "log4j.appender.CONSOLE=org.apache.log4j.ConsoleAppender"
+            echo "log4j.appender.CONSOLE.Threshold=\${zookeeper.console.threshold}"
+            echo "log4j.appender.CONSOLE.layout=org.apache.log4j.PatternLayout"
+            echo "log4j.appender.CONSOLE.layout.ConversionPattern=%d{ISO8601} [myid:%X{myid}] - %-5p [%t:%C{1}@%L] - %m%n"
+          } > /conf/log4j.properties &&
+          echo 'JVMFLAGS="-Xms128M -Xmx1G -XX:+UseParNewGC -XX:+UseConcMarkSweepGC -XX:+CMSParallelRemarkEnabled"' > /conf/java.env &&
+          if [[ $HOST =~ (.*)-([0-9]+)$ ]]; then
+              NAME=${BASH_REMATCH[1]}
+              ORD=${BASH_REMATCH[2]}
+          else
+              echo "Failed to parse name and ordinal of Pod"
+              exit 1
+          fi &&
+          mkdir -p ${ZOO_DATA_DIR} &&
+          mkdir -p ${ZOO_DATA_LOG_DIR} &&
+          export MY_ID=$((ORD+1)) &&
+          echo $MY_ID > $ZOO_DATA_DIR/myid &&
+          if [[ $SERVERS -gt 1 ]]; then
+            for (( i=1; i<=$SERVERS; i++ )); do
+                echo "server.$i=$NAME-$((i-1)).$DOMAIN:$SERVER_PORT:$ELECTION_PORT" >> /conf/zoo.cfg;
+            done
+          fi &&
+          chown -Rv zookeeper "$ZOO_DATA_DIR" "$ZOO_DATA_LOG_DIR" "$ZOO_LOG_DIR" "$ZOO_CONF_DIR" &&
+          zkServer.sh start-foreground
+        image: docker.io/zookeeper:3.5.6
+        imagePullPolicy: Always
+        livenessProbe:
+          exec:
+            command:
+            - bash
+            - -c
+            - OK=$(echo ruok | nc 127.0.0.1 2181); if [[ "$OK" == "imok" ]]; then
+              exit 0; else exit 1; fi
+          failureThreshold: 3
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 5
+        name: kubernetes-zookeeper
+        ports:
+        - containerPort: 2181
+          name: client
+          protocol: TCP
+        - containerPort: 2888
+          name: server
+          protocol: TCP
+        - containerPort: 3888
+          name: leader-election
+          protocol: TCP
+        readinessProbe:
+          exec:
+            command:
+            - bash
+            - -c
+            - OK=$(echo ruok | nc 127.0.0.1 2181); if [[ "$OK" == "imok" ]]; then
+              exit 0; else exit 1; fi
+          failureThreshold: 3
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 5
+        resources:
+          requests:
+            cpu: 500m
+            memory: 1Gi
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /var/lib/zookeeper
+          name: datadir-volume
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext:
+        fsGroup: 1000
+        runAsUser: 1000
+      terminationGracePeriodSeconds: 30
+  updateStrategy:
+    type: RollingUpdate
+  volumeClaimTemplates:
+  - apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      creationTimestamp: null
+      name: datadir-volume
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 50Gi
+      volumeMode: Filesystem
+    status:
+      phase: Pending
+status:
+  collisionCount: 0
+  currentReplicas: 3
+  currentRevision: zookeeper-b88485559
+  observedGeneration: 4
+  readyReplicas: 3
+  replicas: 3
+  updateRevision: zookeeper-b88485559
+  updatedReplicas: 3
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: zookeeper
+  name: zookeeper
+  namespace: clickhouse-v2
+spec:
+  ipFamilies:
+  - IPv4
+  ipFamilyPolicy: SingleStack
+  ports:
+  - name: client
+    port: 2181
+    protocol: TCP
+    targetPort: 2181
+  selector:
+    app: zookeeper
+    what: node
+  sessionAffinity: None
+  type: ClusterIP
+status:
+  loadBalancer: {}
+ 
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: zookeeper
+  name: zookeepers
+  namespace: clickhouse-v2
+spec:
+  clusterIP: None
+  clusterIPs:
+  - None
+  ipFamilies:
+  - IPv4
+  ipFamilyPolicy: SingleStack
+  ports:
+  - name: server
+    port: 2888
+    protocol: TCP
+    targetPort: 2888
+  - name: leader-election
+    port: 3888
+    protocol: TCP
+    targetPort: 3888
+  selector:
+    app: zookeeper
+    what: node
+  sessionAffinity: None
+  type: ClusterIP
+status:
+  loadBalancer: {}
