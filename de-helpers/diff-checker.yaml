@@ -1,0 +1,105 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ec-diff-vcmt-cm
+  namespace: ckh-etl-pipes
+data:
+  ckhscript.sh: |-
+        #!/bin/bash
+        dt=`date -u "+%Y-%m-%d %H" -d "1 hour ago"`
+        echo $dt
+
+        COL_LIST=("card_exp_month" "card_exp_year" "txn_type" "card_type" "resp_code" "card_bin" "os" "platform" "tokenized_flow" "merchant_id" "source_object" "actual_payment_status" "status_sync_source" "order_status" "gateway" "emi" "emi_bank" "emi_tenure" "using_stored_card" "txn_conflict" "prev_txn_status" "card_issuer_country" "order_type" "txn_object_type" "ord_currency" "payment_method_type" "auth_type" "lob" "bank" "payment_status" "payment_instrument_group" "card_brand" "txn_latency" "is_tokenized" "token_generated" "tokenization_consent_failure_reason" "tokenization_consent_ui_presented" "tokenization_consent" "token_status" "priority_logic_tag" "is_offer_txn" "emi_type" "payment_flow" "ticket_size" "txn_latency_enum" "txn_flow_type" "is_token_bin" "token_repeat" "issuer_tokenization_consent_failure_reason" "issuer_token_reference" "token_reference" "tokenization_failure_reason" "stored_card_vault_provider" "reseller_id" "is_cvv_less_txn")
+
+        echo $COL_LIST
+        for col in ${COL_LIST[@]};
+            do
+            echo "grouping by $col" >> accuracy1.csv
+            echo "----------" >> accuracy1.csv
+            query="SELECT coalesce(v1.key1, v2.key2) as joinKey ,  v1.s1 as volv1 , v2.s2 as volv2, v1.distv1 as distv1, v2.distv2 as distv2 , v1.s1-v2.s2 as diffsign , round(diffsign/v1.s1*100, 2) as percentageSign, v1.distv1-v2.distv2 as diffDist, round(diffDist/v1.distv1*100,2) FROM (SELECT $col as key1, sum (sign) as s1, count(distinct(order_reference_id)) AS distv1 
+            FROM express_checkout_v2.orders_v2
+            WHERE (created_at_ist >= '2023-06-01 00:00:00') AND (created_at_ist < '2023-06-02 00:00:00')
+            GROUP BY $col ) as v1 full join 
+            (SELECT $col as key2 , sum(sign) AS s2, count(distinct(order_reference_id)) as distv2 
+            FROM express_checkout_v2.orders_vcmt
+            WHERE (order_created_ist >= '2023-06-01 00:00:00' ) AND (order_created_ist < '2023-06-02 00:00:00') 
+            GROUP BY $col ) as v2 on v1.key1 = v2.key2 
+            ORDER BY v2.s2 desc  LIMIT 100
+            FORMAT CSVWithNames"
+            echo $query
+
+            clickhouse-client -h "clickhouse-godel-ckh-v2.clickhouse-v2" --port 9000 -u ${CLICKHOUSE_USERNAME} --password ${CLICKHOUSE_PASSWORD} --query "${query}" >> accuracy1.csv
+            echo "----------" >> accuracy1.csv
+            FILE=$(cat accuracy1.csv)
+            echo "$FILE"
+            echo "$col accuracy have been noted" >> accuracy1.csv
+        done
+
+----------------------------
+
+apiVersion: batch/v1beta1
+kind: CronJob
+metadata:
+  name: ec-diff-vcmt-cj
+  namespace: ckh-etl-pipes
+spec:
+  concurrencyPolicy: Forbid
+  failedJobsHistoryLimit: 60
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        spec:
+          containers:
+          - command:
+            - "/bin/bash"
+            - "-c"
+            - "bash -v /etc/ckhconf/ckhscript.sh"
+            image: ssss/ssss/ckh-etl:26151bd
+            imagePullPolicy: IfNotPresent
+            name: ckh-ec-etl
+            env:
+            - name: CLICKHOUSE_NAMESPACE
+              value: clickhouse-v2
+            - name: CLICKHOUSE_HOSTNAME
+              value: chi-godel-ckh-v2-godel-ckh-v2
+            - name: CLICKHOUSE_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  key: CLICKHOUSE_USERNAME_V2
+                  name: clickhouse-creds
+            - name: CLICKHOUSE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  key: CLICKHOUSE_PASSWORD_V2
+                  name: clickhouse-creds
+            - name: GOOGLE_CLOUD_KEYFILE_JSON
+              value: /var/secrets/google/key.json
+            terminationMessagePath: /dev/termination-log
+            terminationMessagePolicy: File
+            volumeMounts:
+            - mountPath: "/var/secrets/google"
+              name: bq-key
+              readOnly: true
+            - name: ec-diff-vcmt-cm
+              mountPath: "/etc/ckhconf"
+          imagePullSecrets:
+          - name: jp-gcr
+          dnsPolicy: ClusterFirst
+          restartPolicy: Never
+          schedulerName: default-scheduler
+          securityContext: {}
+          serviceAccount: ckh-etl-jobs
+          serviceAccountName: ckh-etl-jobs
+          terminationGracePeriodSeconds: 30
+          volumes:
+          - name: bq-key
+            secret:
+              secretName: bq-key
+          - name: ec-diff-vcmt-cm
+            configMap:
+              name: ec-diff-vcmt-cm
+  schedule: "30 17 * * *"
+  successfulJobsHistoryLimit: 24
+
+
